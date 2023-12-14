@@ -34,14 +34,14 @@ pub struct AccountBalancePair {
 }
 
 impl AccountBalancePair {
-    fn serialize(&self) -> [u8; 40] {
+    pub fn serialize(&self) -> [u8; 40] {
         let mut buf = [0; 40];
         buf[..32].copy_from_slice(&self.pubkey[..]);
         buf[32..].copy_from_slice(&self.balance.to_le_bytes()[..]);
         buf
     }
 
-    fn deserialize(data: [u8; 40]) -> Result<Self, EasyFraudError> {
+    pub fn deserialize(data: [u8; 40]) -> Result<Self, EasyFraudError> {
         Ok(AccountBalancePair {
             pubkey: data[..32].try_into()
                 .map_err(|_| EasyFraudError::GenesisAccountDeserialization)?,
