@@ -4,6 +4,8 @@ mod errors;
 use errors::EasyFraudError;
 mod state;
 use state::State;
+mod block;
+use block::{*};
 
 fn main() {
 }

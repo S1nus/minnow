@@ -100,17 +100,17 @@ impl State {
 
     // verify the transaction against the current state, then execute it
     // save the old diffs
-    pub fn verify_and_run_transaction(&mut self, stx: SignedTransaction) -> Result<(bool, Option<Hash>), EasyFraudError> {
+    pub fn verify_and_run_transaction(&mut self, stx: &SignedTransaction) -> Result<Option<Hash>, EasyFraudError> {
         let txn = match stx.verify_and_deserialize() {
             Ok(txn) => txn,
             Err(_) => {
-                return Ok((false, None));
+                return Ok(None);
             }
         };
 
         // transaction must have > 0 satoshi
         if txn.amount <= 0 {
-            return Ok((false, None));
+            return Ok(None);
         }
 
         let old_sender_balance_leaf: [u8; 32] = self.tree.get(self.root.as_ref(), &txn.sender_pubkey)
@@ -128,7 +128,7 @@ impl State {
         
         // validate the transaction
         if old_sender_balance <= txn.amount {
-            return Ok((false, None))
+            return Ok(None)
         }
 
         let mut new_sender_balance_leaf = [0; 32];
@@ -152,14 +152,14 @@ impl State {
                 pubkey: txn.recipient_pubkey,
                 balance: old_recipient_balance,
             });
-            return Ok((true, updated_root));
+            return Ok(updated_root);
         }
 
         // second insertion failed. must revert first.
         let reverted_root = self.tree.insert(first_root.as_ref(), &txn.sender_pubkey, &old_sender_balance_leaf)
             .map_err(|_| EasyFraudError::CouldNotRevert)?;
         self.root = reverted_root;
-        Ok((false, None))
+        Ok(None)
     }
 
     pub fn init_chain(&mut self, req: RequestInitChain) -> Result<Response, EasyFraudError> {
@@ -183,7 +183,12 @@ impl State {
                 Ok(())
             })?;
 
+        self.height = 1;
+
+        self.volatile_diffs = vec![];
+
         let app_hash = self.root.ok_or(EasyFraudError::NullApphash)?.to_vec();
+        self.volatile_root = self.root;
 
         Ok(Response::InitChain(ResponseInitChain{
             consensus_params: None,
