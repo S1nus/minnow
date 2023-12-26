@@ -22,6 +22,7 @@ use tendermint::v0_38::abci::{
     Request,
     Response,
 };
+use crate::block::{IncomingBlock, OutgoingBlock, SignedTxnISRPair};
 use crate::errors::EasyFraudError;
 use crate::transaction::{
     SignedTransaction,
@@ -31,6 +32,11 @@ use crate::transaction::{
 pub struct AccountBalancePair {
     pub pubkey: [u8; 32],
     pub balance: u64,
+}
+
+pub struct AccountBalanceLeafPair {
+    pub pubkey: [u8; 32],
+    pub balance: Option<[u8; 32]>,
 }
 
 impl AccountBalancePair {
@@ -59,8 +65,9 @@ pub struct State {
     pub height: u64,
     // keep track of the pre-image of everything we changed,
     // so we can revert back if needed.
+    pub current_block: Option<OutgoingBlock>,
     pub volatile_root: Option<Hash>,
-    pub volatile_diffs: Vec<AccountBalancePair>,
+    pub volatile_diffs: Vec<AccountBalanceLeafPair>,
 }
 
 impl State {
@@ -144,13 +151,13 @@ impl State {
         if let Ok(updated_root) = second_root {
             self.root = updated_root;
             // Transaction execution was success. Now save the old diffs.
-            self.volatile_diffs.push(AccountBalancePair {
+            self.volatile_diffs.push(AccountBalanceLeafPair {
                 pubkey: txn.sender_pubkey,
-                balance: old_sender_balance,
+                balance: Some(old_sender_balance_leaf),
             });
-            self.volatile_diffs.push(AccountBalancePair {
+            self.volatile_diffs.push(AccountBalanceLeafPair {
                 pubkey: txn.recipient_pubkey,
-                balance: old_recipient_balance,
+                balance: old_recipient_balance_leaf,
             });
             return Ok(updated_root);
         }
@@ -196,5 +203,49 @@ impl State {
             app_hash: AppHash::try_from(app_hash)
                 .map_err(|_| EasyFraudError::InvalidGenesisAppHash)?,
         }))
+    }
+
+    pub fn prepare_proposal(&mut self, req: RequestPrepareProposal) -> Result<Response, EasyFraudError> {
+        let incoming_block = IncomingBlock {
+            signed_transactions: req.txs.iter()
+                .map(|tx| {
+                    let mut buf = [0; 136];
+                    buf.copy_from_slice(tx);
+                    buf
+                })
+                .collect(),
+        };
+        self.current_block = Some(incoming_block.process(self)?);
+        Ok(Response::PrepareProposal(ResponsePrepareProposal{
+            // unwrap is safe because we set it on line 218
+            txs: self.current_block.as_ref().unwrap().pairs.iter()
+                .map(|pair| {
+                    pair.serialize()
+                    .to_vec()
+                    .into()
+                })
+                .collect(),
+        }))
+    }
+
+    pub fn process_proposal(&mut self, req: RequestProcessProposal) -> Result<(), EasyFraudError> {
+        for pair in req.txs {
+            let pair = SignedTxnISRPair::from_slice(&pair)
+                .map_err(|_| EasyFraudError::DeserializePairsError)?;
+        }
+        Ok(())
+    }
+
+    pub fn revert_volatile(&mut self) {
+        self.volatile_diffs.iter().for_each(|pair| {
+            if let Some(balance_leaf) = pair.balance {
+                let _ = self.tree.insert(self.volatile_root.as_ref(), &pair.pubkey, &balance_leaf);
+            } else {
+                let _ = self.tree.remove(self.volatile_root.as_ref(), &pair.pubkey);
+            }
+        });
+        self.root = self.volatile_root;
+        self.volatile_root = None;
+        self.volatile_diffs = vec![];
     }
 }

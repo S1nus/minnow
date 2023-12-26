@@ -25,7 +25,7 @@ pub struct SignedTransaction {
 
 impl Transaction {
 
-    pub fn sign(&self, signing_key: SigningKey) -> SignedTransaction {
+    pub fn sign(&self, signing_key: &SigningKey) -> SignedTransaction {
         let serialized = self.serialize();
         let signature = signing_key.sign(&serialized[..]);
         SignedTransaction { 
@@ -63,7 +63,7 @@ impl SignedTransaction {
         buf
     }
 
-    pub fn deserialize(bytes: [u8; 72]) -> Result<Self, EasyFraudError> {
+    pub fn deserialize(bytes: [u8; 136]) -> Result<Self, EasyFraudError> {
         Ok(SignedTransaction { 
             transaction_data: bytes[..72].try_into()
                 .map_err(|_| EasyFraudError::TransactionDeserializationError)?,

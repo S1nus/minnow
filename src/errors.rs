@@ -28,4 +28,8 @@ pub enum EasyFraudError {
     InvalidSignature,
     #[error("State root update returned None")]
     NoRoot,
+    #[error("Could not serialize pairs")]
+    SerializePairsError,
+    #[error("Could not deserialize pairs")]
+    DeserializePairsError,
 }
