@@ -1,3 +1,3 @@
 # Disclaimer
 
-This started out as an optimistic rollup, so forgive me, it might not make sense
+Generalized rollup, basic state machine for ABCI++
